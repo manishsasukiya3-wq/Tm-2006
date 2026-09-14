@@ -16,14 +16,32 @@ jobs:
       - name: Extract ZIP
         run: |
           ZIP=$(find . -maxdepth 2 -type f -name "*.zip" | head -n 1)
+          test -n "$ZIP" || { echo "ZIP not found"; exit 1; }
           mkdir -p extracted
           unzip -q "$ZIP" -d extracted
 
       - name: Find Android Project
         run: |
-          PROJECT=$(find extracted -type f -name "settings.gradle.kts" -o -name "settings.gradle" | head -n 1)
+          PROJECT=$(find extracted -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" \) | head -n 1)
+          test -n "$PROJECT" || { echo "Android project not found"; exit 1; }
           PROJECT_DIR=$(dirname "$PROJECT")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project: $PROJECT_DIR"
+
+      - name: Remove unused Firebase configuration
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          sed -i '/alias(libs.plugins.google.services)/d' build.gradle.kts
+          sed -i '/alias(libs.plugins.google.services)/d' app/build.gradle.kts
+
+          sed -i '/implementation(platform(libs.firebase.bom))/d' app/build.gradle.kts
+          sed -i '/implementation(libs.firebase.ai)/d' app/build.gradle.kts
+          sed -i '/implementation(libs.firebase.appcheck.recaptcha)/d' app/build.gradle.kts
+          sed -i '/implementation(libs.firebase.appcheck.debug)/d' app/build.gradle.kts
+
+          sed -i '/googleServices { missingGoogleServicesStrategy/d' app/build.gradle.kts
+
+          echo "Unused Firebase/Google Services configuration removed."
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -52,7 +70,7 @@ jobs:
       - name: Build Debug APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          gradle assembleDebug --no-daemon --no-configuration-cache
+          gradle clean assembleDebug --no-daemon --no-configuration-cache
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
